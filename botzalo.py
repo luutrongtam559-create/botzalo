@@ -5,13 +5,12 @@ import json
 app = Flask(__name__)
 
 # --- CẤU HÌNH ---
-# Token của bạn
-ACCESS_TOKEN = "3829309327888967360:dhBkKaqFGRDFsuUAPVYOyIQrkJBZQCTXhRGUuFCTJwhVPWsdexZksWMwXHTUIMHT"
-ZALO_API_URL = "https://openapi.zalo.me/v2.0/oa/message"
+# Token mới nhất bạn vừa gửi
+ACCESS_TOKEN = "3829309327888967360:pbdpnfxQdCOoTHEqPdnSPIoWkwatLMuUOCcmokIwjBtygqsAMhFDyDcwFuohadlr"
 
 @app.route('/', methods=['GET'])
 def index():
-    return "Bot Zalo đang chạy!", 200
+    return "Bot Zalo Platform đang chạy!", 200
 
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
@@ -19,22 +18,19 @@ def webhook():
         return "Webhook OK", 200
 
     data = request.get_json()
+    # In log để kiểm tra nếu cần
     print("📩 Dữ liệu nhận được:", json.dumps(data, indent=2))
 
     try:
-        # --- SỬA LẠI PHẦN NÀY ĐỂ KHỚP VỚI ẢNH LOG ---
-        
-        # 1. Kiểm tra sự kiện 'message.text.received' thay vì 'user_send_text'
+        # Xử lý tin nhắn đến
         if 'event_name' in data and data['event_name'] == 'message.text.received':
-            
             message_data = data['message']
             
-            # 2. Lấy ID người gửi từ 'from' -> 'id'
+            # 1. Lấy ID người gửi (Dùng làm chat_id để trả lời)
             sender_id = message_data['from']['id']
             
-            # 3. Lấy nội dung tin nhắn
-            # (Thử lấy ở 'text', nếu không có thì thử 'content' vì JSON bị cắt nên mình đoán)
-            user_msg = message_data.get('text') 
+            # 2. Lấy nội dung tin nhắn (thử lấy text, nếu không có lấy content)
+            user_msg = message_data.get('text')
             if not user_msg:
                 user_msg = message_data.get('content', '')
 
@@ -42,7 +38,7 @@ def webhook():
             
             # --- LOGIC TRẢ LỜI ---
             reply_text = ""
-            msg_lower = str(user_msg).lower() # Chuyển về chữ thường để so sánh
+            msg_lower = str(user_msg).lower()
 
             if "xin chào" in msg_lower or "hi" in msg_lower:
                 reply_text = "Chào bạn! Mình là Bot Zalo cá nhân."
@@ -61,26 +57,29 @@ def webhook():
 
     return "OK", 200
 
-def send_zalo_message(user_id, text_content):
-    headers = {
-        "Content-Type": "application/json",
-        "access_token": ACCESS_TOKEN
-    }
+def send_zalo_message(chat_id, text_content):
+    # --- QUAN TRỌNG: CẬP NHẬT API THEO ẢNH BẠN GỬI ---
+    # URL này dành riêng cho Bot Cá nhân (Platform)
+    api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
+    
+    # Cấu trúc gửi tin đúng chuẩn Platform
     payload = {
-        "recipient": {
-            "user_id": user_id
-        },
-        "message": {
-            "text": text_content
-        }
+        "chat_id": chat_id, # ID người nhận
+        "text": text_content # Nội dung tin nhắn
+    }
+    
+    headers = {
+        "Content-Type": "application/json"
     }
     
     try:
-        response = requests.post(ZALO_API_URL, headers=headers, json=payload)
-        print("Phản hồi gửi đi:", response.json())
+        response = requests.post(api_url, headers=headers, json=payload)
+        
+        # In kết quả gửi tin ra Log để kiểm tra
+        print(f"Phản hồi gửi đi: {response.status_code} - {response.text}")
+        
     except Exception as e:
         print("Lỗi gửi tin nhắn:", e)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
