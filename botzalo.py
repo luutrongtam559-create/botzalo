@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # --- CẤU HÌNH ---
 # Token của bạn
-ACCESS_TOKEN = "3829309327888967360:fPyGnthDWNupvADfZCeiIMmiUgprSDHzEIgHsTBPrhdfBheDVEHSeDgkMGVVwUDI"
+ACCESS_TOKEN = "3829309327888967360:dhBkKaqFGRDFsuUAPVYOyIQrkJBZQCTXhRGUuFCTJwhVPWsdexZksWMwXHTUIMHT"
 ZALO_API_URL = "https://openapi.zalo.me/v2.0/oa/message"
 
 @app.route('/', methods=['GET'])
@@ -83,3 +83,4 @@ def send_zalo_message(user_id, text_content):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
