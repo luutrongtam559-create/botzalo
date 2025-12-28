@@ -12,32 +12,37 @@ from duckduckgo_search import DDGS
 # ================= 1. CẤU HÌNH BOT =================
 app = Flask(__name__)
 
-# TOKEN CỦA BẠN
+# TOKEN ZALO
 ACCESS_TOKEN = "3829309327888967360:pbdpnfxQdCOoTHEqPdnSPIoWkwatLMuUOCcmokIwjBtygqsAMhFDyDcwFuohadlr"
+
+# API KEY CHATGPT (LƯU Ý: Key này đã bị lộ, nếu lỗi hãy thay key mới)
+OPENAI_API_KEY = "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"
 
 # Cấu hình Wiki
 try: wikipedia.set_lang("vi")
 except: pass
 
-# ================= 2. HÀM GỬI TIN & ẢNH (CHUẨN ZALO PLATFORM) =================
+# ================= 2. HÀM GỬI TIN & ẢNH (FIXED) =================
 
 def send_zalo_message(chat_id, text_content):
-    """Gửi tin nhắn văn bản"""
     api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text_content}
+    payload = {
+        "chat_id": chat_id,
+        "text": text_content
+    }
     headers = {"Content-Type": "application/json"}
     try:
         requests.post(api_url, headers=headers, json=payload)
     except Exception as e:
         print(f"Lỗi gửi tin: {e}")
 
-def send_zalo_image(chat_id, image_url, caption=""):
+def send_image_zalo(chat_id, image_url, caption=""):
     """
-    Gửi ảnh chuẩn Media Template để Zalo hiện ảnh (tính vào sendPhoto)
+    Gửi ảnh dạng Template Media để Zalo hiển thị hình ảnh (tính vào sendPhoto).
     """
     api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
     
-    # Payload chuẩn để gửi ảnh
+    # Cấu trúc JSON chuẩn để gửi ảnh trên Zalo Platform
     payload = {
         "chat_id": chat_id,
         "message": {
@@ -58,19 +63,76 @@ def send_zalo_image(chat_id, image_url, caption=""):
     
     try:
         response = requests.post(api_url, headers=headers, json=payload)
-        # Nếu gửi ảnh thất bại (thường do link ảnh Google bị chặn hotlink), gửi link text thay thế
+        # Nếu gửi ảnh thất bại (do link chặn hotlink), gửi link text dự phòng
         if response.status_code != 200:
-            send_zalo_message(chat_id, f"{caption}\n(Ảnh không hiển thị được, bấm link xem):\n{image_url}")
+            send_zalo_message(chat_id, f"{caption}\n(Ảnh lỗi, bấm link): {image_url}")
     except:
         send_zalo_message(chat_id, f"{caption}\nLink: {image_url}")
 
-# ================= 3. DỮ LIỆU HỆ THỐNG & GAME =================
+# ================= 3. AI & TIỆN ÍCH =================
+
+def ask_chatgpt(question):
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
+    }
+    data = {
+        "model": "gpt-3.5-turbo",
+        "messages": [
+            {"role": "system", "content": "Bạn là trợ lý ảo vui tính."},
+            {"role": "user", "content": question}
+        ],
+        "max_tokens": 800
+    }
+    try:
+        res = requests.post(url, headers=headers, json=data)
+        if res.status_code == 200:
+            return res.json()['choices'][0]['message']['content']
+        else:
+            return "⚠️ Key OpenAI hết hạn hoặc lỗi."
+    except: return "Lỗi kết nối OpenAI."
+
+def search_text_summary(query):
+    try:
+        with DDGS() as ddgs:
+            res = list(ddgs.text(query, max_results=1))
+            if res:
+                return f"📌 **{res[0]['title']}**\n\n📝 {res[0]['body']}\n\n🔗 Nguồn: {res[0]['href']}"
+            return "Không tìm thấy thông tin."
+    except: return "Lỗi tìm kiếm."
+
+def search_multiple_images(query, count=3):
+    try:
+        with DDGS() as ddgs:
+            res = list(ddgs.images(query, max_results=count))
+            return [x['image'] for x in res]
+    except: return []
+
+def search_image_url(query):
+    imgs = search_multiple_images(query, 1)
+    return imgs[0] if imgs else None
+
+# ================= 4. DỮ LIỆU HỆ THỐNG =================
 
 NUMBER_MAP = {
-    "1": "/tarot", "2": "/baitay", "3": "/nhac", "4": "/time", "5": "/thptqg",
-    "6": "/hld", "7": "/wiki", "8": "/gg", "9": "/kbb",
-    "10": "/meme", "11": "/anime", "12": "/code",
-    "13": "/updt", "14": "/leak", "15": "/banner", "16": "/sticker"
+    "1": "/tarot", 
+    "2": "/baitay", 
+    "3": "/nhac", 
+    "4": "/time", 
+    "5": "/thptqg",
+    "6": "/hld", 
+    "7": "/wiki", 
+    "8": "/gg", 
+    "9": "/kbb",
+    "10": "/meme", 
+    "11": "/anime", 
+    "12": "/code",
+    "13": "/updt", 
+    "14": "/leak", 
+    "15": "/banner", 
+    "16": "/sticker", 
+    "17": "/ai"
 }
 
 kbb_state = {} 
@@ -84,7 +146,7 @@ GAME_CODES = {
     "bloxfruit": ["SUB2GAMERROBOT", "KITGAMING"]
 }
 
-# ================= 4. KHO TÀNG DỮ LIỆU (FULL 100% - KHÔNG CẮT) =================
+# ================= 5. KHO TÀNG DỮ LIỆU (FULL 100% - EXPANDED) =================
 
 MAJORS_DATA = {
     0: ("The Fool", "sự khởi đầu đầy ngây thơ, tự do và tiềm năng vô hạn", "sự liều lĩnh ngu ngốc, ngây thơ quá mức hoặc rủi ro không đáng có", "hãy dũng cảm bước đi nhưng đừng quên nhìn đường"),
@@ -179,7 +241,7 @@ MINORS_FULL = {
 }
 
 PLAYING_CARDS_FULL = {
-    "Hearts": { # CƠ - CẢM XÚC
+    "Hearts": {
         "A": {"core": "một khởi đầu mới đầy ắp tình cảm", "shadow": "thực ra có thể bạn đang quá khao khát yêu thương nên dễ ngộ nhận", "advice": "hãy mở lòng nhưng đừng vội vàng trao hết"},
         "2": {"core": "sự kết nối sâu sắc giữa hai tâm hồn", "shadow": "nhưng cẩn thận kẻo bạn đang phụ thuộc cảm xúc vào người kia quá nhiều", "advice": "yêu thương cần đi kèm sự tự chủ"},
         "3": {"core": "sự phân vân hoặc người thứ 3", "shadow": "thực tế là chính bạn đang không rõ mình muốn gì, hoặc đang đứng núi này trông núi nọ", "advice": "hãy thành thật với cảm xúc của mình trước"},
@@ -194,7 +256,7 @@ PLAYING_CARDS_FULL = {
         "Q": {"core": "người phụ nữ dịu dàng", "shadow": "có thể bạn đang quá đa sầu đa cảm, chuyện bé xé ra to", "advice": "hãy dùng trực giác nhưng đừng quên lý trí"},
         "K": {"core": "người đàn ông chân thành", "shadow": "đôi khi sự tốt bụng này lại thiếu đi sự quyết đoán cần thiết", "advice": "cần mạnh mẽ bảo vệ cảm xúc của mình hơn"}
     },
-    "Diamonds": { # RÔ - VẬT CHẤT
+    "Diamonds": {
         "A": {"core": "tin tức về tiền bạc, giấy tờ", "shadow": "nhưng cẩn thận, cơ hội này có thể đi kèm những ràng buộc pháp lý rắc rối", "advice": "đọc kỹ mọi thứ trước khi gật đầu"},
         "2": {"core": "hợp đồng, trao đổi", "shadow": "có vẻ như bạn đang tính toán quá chi li, khiến mối quan hệ trở nên thực dụng", "advice": "đôi khi sòng phẳng quá lại mất tình cảm"},
         "3": {"core": "hợp tác làm ăn", "shadow": "nhưng coi chừng 'lắm thầy nhiều ma', chưa chắc hợp tác đã tốt hơn làm một mình", "advice": "chọn đối tác thật kỹ"},
@@ -209,7 +271,7 @@ PLAYING_CARDS_FULL = {
         "Q": {"core": "người quản lý giỏi", "shadow": "bạn đang quá khắt khe với bản thân và người khác trong chuyện tiền nong", "advice": "hãy rộng lượng hơn một chút"},
         "K": {"core": "quyền lực tài chính", "shadow": "bạn đang dùng tiền để kiểm soát mọi thứ, kể cả tình cảm", "advice": "có những thứ tiền không mua được"}
     },
-    "Clubs": { # TÉP - CÔNG VIỆC
+    "Clubs": {
         "A": {"core": "khởi đầu dự án mới", "shadow": "bạn hào hứng đấy, nhưng coi chừng 'cả thèm chóng chán'", "advice": "giữ vững ngọn lửa nhiệt huyết đường dài"},
         "2": {"core": "sự hỗ trợ", "shadow": "bạn đang dựa dẫm quá nhiều vào người khác mà quên mất năng lực tự thân", "advice": "hãy tự đứng trên đôi chân mình"},
         "3": {"core": "cân nhắc lựa chọn", "shadow": "thực ra bạn đã có câu trả lời rồi, chỉ là bạn sợ phải chịu trách nhiệm thôi", "advice": "quyết đoán lên, sai thì sửa"},
@@ -224,7 +286,7 @@ PLAYING_CARDS_FULL = {
         "Q": {"core": "giao tiếp khéo léo", "shadow": "bạn đang thảo mai hoặc thiếu chân thành trong công việc", "advice": "sự chân thật sẽ mang lại giá trị bền vững"},
         "K": {"core": "lãnh đạo quyền lực", "shadow": "bạn đang trở nên độc đoán và không chịu nghe ai", "advice": "lãnh đạo là phục vụ, không phải cai trị"}
     },
-    "Spades": { # BÍCH - TÂM LÝ
+    "Spades": {
         "A": {"core": "kết thúc để bắt đầu", "shadow": "bạn đang cố níu kéo những thứ đã chết, điều đó chỉ làm bạn thêm đau", "advice": "dũng cảm cắt bỏ những gì không còn phục vụ bạn"},
         "2": {"core": "mâu thuẫn, cãi vã", "shadow": "bạn đang đấu tranh với chính mình nhiều hơn là với người khác", "advice": "hòa giải nội tâm trước"},
         "3": {"core": "chia ly, rạn nứt", "shadow": "nỗi đau này đến để dạy bạn cách yêu thương bản thân mình hơn", "advice": "cho phép mình được buồn, nhưng đừng chìm đắm"},
@@ -253,31 +315,22 @@ SPREADS_PLAYING = {
     "7": {"name": "7 Lá (Tình duyên)", "count": 7, "pos": ["Năng lượng của bạn", "Năng lượng đối phương", "Cảm xúc của bạn", "Cảm xúc của họ", "Trở ngại khách quan", "Trở ngại chủ quan", "Kết quả mối quan hệ"]}
 }
 
-# ================= 5. ENGINE LOGIC (XỬ LÝ THÔNG MINH) =================
+# ================= 5. LOGIC GAME & TRẢ LỜI =================
 
-def search_text_summary(query):
-    try:
-        with DDGS() as ddgs:
-            res = list(ddgs.text(query, max_results=1))
-            return f"📌 **{res[0]['title']}**\n\n📝 {res[0]['body']}\n\n🔗 Nguồn: {res[0]['href']}" if res else "Không tìm thấy."
-    except: return "Lỗi tìm kiếm."
-
-def search_image_url(query):
-    try:
-        with DDGS() as ddgs:
-            res = list(ddgs.images(query, max_results=1))
-            return res[0]['image'] if res else None
-    except: return None
-
-def search_multiple_images(query, count=3):
-    try:
-        with DDGS() as ddgs:
-            res = list(ddgs.images(query, max_results=count))
-            return [x['image'] for x in res]
-    except: return []
+def get_natural_connector(index, total):
+    if index == 0: return random.choice(["Đầu tiên thì,", "Mở bài là", "Khởi động với"])
+    elif index == total - 1: return random.choice(["Cuối cùng,", "Chốt lại thì,", "Kết quả là,"])
+    else: return random.choice(["Tiếp đến,", "Bên cạnh đó,", "Không chỉ vậy,", "Chưa hết đâu,", "Nhìn sang lá tiếp theo,"])
 
 def get_funny_response(text):
     text = text.lower()
+    if any(x in text for x in ["hi", "chào", "hello", "alo", "ê"]):
+        return random.choice([
+            "Chào cưng, nay rảnh ghé chơi à? 😎",
+            "Alo nghe rõ, dây thép gai đây! 📞",
+            "Gọi bot chi đấy? Đang bận đi giải cứu thế giới rồi.",
+            "Hello, chúc một ngày không bị deadline dí! 🏃"
+        ])
     if "yêu" in text or "crush" in text:
         return random.choice([
             "Yêu đương gì tầm này, lo học đi má! 📚",
@@ -285,22 +338,23 @@ def get_funny_response(text):
             "Tình yêu như bát bún riêu, bao nhiêu sợi bún bấy nhiêu sợi sầu...",
             "Vào /baitay xem quẻ tình duyên đi, ngồi đó mà than thở."
         ])
-    if "buồn" in text or "khóc" in text or "sầu" in text:
+    if "buồn" in text or "khóc" in text or "chán" in text:
         return random.choice([
             "Buồn thì đi ngủ, trong mơ cái gì cũng có. 😴",
             "Thôi nín đi, khóc sưng mắt xấu lắm ai mà thèm yêu.",
             "Cuộc đời này ngắn lắm, đừng lãng phí thời gian để buồn. Đi ăn gì ngon đi! 🍜",
-            "Có chuyện gì kể bot nghe, bot hứa sẽ... đi kể cho cả làng nghe (đùa đấy) 🤣"
+            "Chán thì vào /kbb làm ván với tao này! 🥊"
         ])
-    if "chán" in text:
-        return "Chán thì vào /kbb làm ván với tao này! 🥊"
     if "ngu" in text or "dốt" in text or "điên" in text:
-        return random.choice(["Gương kia ngự ở trên tường... 🪞", "Chửi bot là nghiệp tụ vành môi đó nha. 🤐"])
-    if any(x in text for x in ["hi", "chào", "hello", "alo", "ê"]):
-        return random.choice(["Chào cưng, nay rảnh ghé chơi à? 😎", "Alo nghe rõ, dây thép gai đây! 📞", "Gõ /help xem menu đi."])
-    if "cảm ơn" in text or "thanks" in text:
-        return "Khách sáo quá, chuyển khoản là được rồi. 💸"
-    return random.choice(["Nói gì không hiểu, nhưng mà nghe cuốn đấy! 🤣", "Bot đang load... não hơi chậm thông cảm. 🐌", "Hỏi khó thế, đi hỏi Google đi má /gg"])
+        return random.choice([
+            "Gương kia ngự ở trên tường... 🪞",
+            "Chửi bot là nghiệp tụ vành môi đó nha. 🤐",
+            "Bot thông minh hơn bạn nghĩ đấy, cẩn thận!",
+            "Ok fine, bạn nhất, bạn là số 1. 👍"
+        ])
+    
+    # AI TRẢ LỜI CHO CÁC CÂU KHÁC
+    return ask_chatgpt(text)
 
 def generate_tarot_deck():
     deck = []
@@ -328,15 +382,20 @@ def execute_tarot_reading(ctx):
     msg = f"🔮 **KẾT QUẢ TAROT: {ctx.get('topic').upper()}**\n"
     msg += f"👤 Querent: {ctx.get('info', 'Ẩn danh')}\n➖➖➖➖➖➖\n\n"
     msg += "🍃 **HÀNH TRÌNH CỦA BẠN:**\n\n"
+    
     for i, c in enumerate(drawn):
+        prefix = ["Mở đầu,", "Tiếp theo,", "Sau đó,", "Gần kết thúc,"][min(i, 3)]
         status_icon = "🔺" if c['orientation'] == "Xuôi" else "🔻"
+        
         msg += f"{status_icon} **{c['pos']}: {c['name']}** ({c['orientation']})\n"
         if c['orientation'] == "Xuôi":
-            msg += f"👉 Ý nghĩa: {c['meaning_up']}\n"
+            msg += f"{prefix} lá bài này mang đến năng lượng tích cực về {c['meaning_up']}. Đây là tín hiệu để bạn tự tin bước tiếp.\n"
         else:
-            msg += f"👉 Cảnh báo: {c['meaning_rev']}\n"
-        msg += f"💡 Lời khuyên: {c['advice']}\n\n"
-    msg += "💡 **THÔNG ĐIỆP:** Mọi thứ diễn ra đều có lý do của nó. Hãy tin vào trực giác."
+            msg += f"{prefix} ở chiều ngược, lá bài cảnh báo về {c['meaning_rev']}. Có lẽ bạn cần chậm lại để xem xét kỹ hơn.\n"
+        msg += f"👉 *Lời khuyên nhỏ:* {c['advice']}\n\n"
+            
+    msg += "💡 **THÔNG ĐIỆP TỪ VŨ TRỤ:**\n"
+    msg += "Mọi thứ diễn ra đều có lý do của nó. Hãy tin tưởng vào trực giác của bạn và dũng cảm đối diện với sự thật."
     return msg
 
 def generate_playing_deck():
@@ -347,13 +406,15 @@ def generate_playing_deck():
         for rank, details in ranks.items():
             name = f"{ranks_vn[rank]} {suits_vn[suit_en]}"
             symbol = f"{rank}"
-            deck.append({"name": name, "symbol": symbol, "suit": suit_en, "core": details["core"], "shadow": details["shadow"], "advice": details["advice"]})
+            deck.append({
+                "name": name, 
+                "symbol": symbol, 
+                "suit": suit_en, 
+                "core": details["core"], 
+                "shadow": details["shadow"], 
+                "advice": details["advice"]
+            })
     return deck
-
-def get_natural_connector(index, total):
-    if index == 0: return "Đầu tiên thì,"
-    elif index == total - 1: return "Cuối cùng,"
-    else: return random.choice(["Tiếp đến,", "Bên cạnh đó,", "Không chỉ vậy,"])
 
 def execute_playing_reading(ctx):
     deck = generate_playing_deck()
@@ -371,32 +432,41 @@ def execute_playing_reading(ctx):
     msg += f"👤 Người hỏi: {ctx.get('info', 'Ẩn danh')}\n"
     msg += "➖➖➖➖➖➖➖➖➖➖\n\n"
     msg += "🃏 **BỘ BÀI ĐÃ BỐC:** " + " - ".join([c['symbol'] for c in drawn]) + "\n\n"
-    msg += "☕ **LUẬN GIẢI CHI TIẾT:**\n\n"
+    msg += "☕ **TRÒ CHUYỆN VÀ LUẬN GIẢI:**\n\n"
 
     for i, c in enumerate(drawn):
         connector = get_natural_connector(i, len(drawn))
         interpretation = ""
         # Logic Context-Aware
         if "tình" in topic:
-            if c["suit"] == "Diamonds": interpretation = f"Dù hỏi tình cảm, lá Rô này ám chỉ **tài chính** đang tác động. {c['core']}."
-            elif c["suit"] == "Clubs": interpretation = f"Công việc bận rộn làm xao nhãng. {c['core']}."
-            elif c["suit"] == "Spades": interpretation = f"Thử thách tâm lý. {c['core']}."
-            else: interpretation = f"Tín hiệu tình cảm. {c['core']}."
+            if c["suit"] == "Diamonds": interpretation = f"Dù hỏi về tình cảm, nhưng lá Rô này ám chỉ **vấn đề tài chính** đang tác động. {c['core']}."
+            elif c["suit"] == "Clubs": interpretation = f"Công việc bận rộn đang làm xao nhãng mối quan hệ. {c['core']}."
+            elif c["suit"] == "Spades": interpretation = f"Thật tiếc khi lá Bích xuất hiện, báo hiệu thử thách tâm lý. {c['core']}."
+            else: interpretation = f"Tín hiệu tốt lành cho tình yêu. {c['core']}."
         elif "tiền" in topic or "công" in topic:
-            if c["suit"] == "Hearts": interpretation = f"Cảm xúc chi phối công việc. {c['core']}."
+            if c["suit"] == "Hearts": interpretation = f"Bạn đang để cảm xúc chi phối công việc. {c['core']}."
             elif c["suit"] == "Spades": interpretation = f"Cẩn thận rủi ro. {c['core']}."
-            else: interpretation = f"Năng lượng tích cực. {c['core']}."
+            else: interpretation = f"Năng lượng rất tích cực. {c['core']}."
         else:
             interpretation = f"{c['core']}."
 
         msg += f"🔹 **{c['pos_name']}: {c['name']}**\n"
-        msg += f"{connector} {interpretation}\n"
-        msg += f"👉 *Góc khuất:* {c['shadow']}.\n"
-        msg += f"💡 Lời khuyên: {c['advice']}.\n\n"
+        msg += f"{connector} với lá bài này, về cơ bản nó nói về **{interpretation}**.\n"
+        msg += f"👉 *Góc nhìn sâu hơn:* {c['shadow']}. "
+        msg += f"Tại vị trí '{c['pos_name']}', lời khuyên là: {c['advice']}.\n\n"
+    
+    suits_count = {"Hearts": 0, "Diamonds": 0, "Clubs": 0, "Spades": 0}
+    for c in drawn: suits_count[c["suit"]] += 1
+    dom_suit = max(suits_count, key=suits_count.get)
+    msg += "✅ **LỜI NHẮN NHỦ CUỐI CÙNG:**\n"
+    if dom_suit == "Hearts": msg += "Cảm xúc đang dẫn lối bạn (nhiều Cơ). Hãy yêu thương nhưng đừng mù quáng."
+    elif dom_suit == "Diamonds": msg += "Thực tế và vật chất đang lên ngôi (nhiều Rô). Hãy tính toán kỹ lưỡng."
+    elif dom_suit == "Clubs": msg += "Hành động là chìa khóa (nhiều Tép). Đừng ngồi yên, hãy làm ngay đi."
+    elif dom_suit == "Spades": msg += "Giai đoạn thử thách (nhiều Bích). Hãy kiên cường, sau cơn mưa trời lại sáng."
 
     return msg
 
-# ================= 6. FLOW HỘI THOẠI (SESSION VỚI MENU SỐ) =================
+# ================= 6. FLOW HỘI THOẠI (FIX ƯU TIÊN) =================
 
 def handle_session_flow(user_id, text):
     s = tarot_sessions.get(user_id)
@@ -439,20 +509,24 @@ def handle_session_flow(user_id, text):
             del tarot_sessions[user_id]
         else: send_zalo_message(user_id, "❌ Vui lòng chỉ gõ số (1, 2, 3).")
 
-# ================= 7. XỬ LÝ LỆNH (MENU & ẢNH TEMPLATE) =================
+# ================= 7. XỬ LÝ LỆNH =================
 
 def handle_command(user_id, cmd, args):
     cmd = cmd.lower()
     
     if cmd == "/tarot":
         tarot_sessions[user_id] = {"step": 1, "mode": "TAROT"}
-        msg = "🔮 **PHÒNG TAROT ONLINE**\nChủ đề bạn quan tâm?\nGõ:\n1. Tình yêu\n2. Công việc\n3. Tiền bạc"
-        send_zalo_message(user_id, msg)
+        send_zalo_message(user_id, "🔮 **PHÒNG TAROT ONLINE**\nChủ đề bạn quan tâm?\nGõ:\n1. Tình yêu\n2. Công việc\n3. Tiền bạc")
 
     elif cmd == "/baitay":
         tarot_sessions[user_id] = {"step": 1, "mode": "PLAYING"}
-        msg = "🎭 **PHÒNG BÀI TÂY**\nChủ đề bạn quan tâm?\nGõ:\n1. Tình yêu\n2. Công việc\n3. Tiền bạc"
-        send_zalo_message(user_id, msg)
+        send_zalo_message(user_id, "🎭 **PHÒNG BÓI BÀI TÂY**\nChủ đề bạn quan tâm?\nGõ:\n1. Tình yêu\n2. Công việc\n3. Tiền bạc")
+
+    elif cmd == "/ai":
+        if not args: send_zalo_message(user_id, "🤖 Cú pháp: /ai [câu hỏi]\nVD: /ai Viết thơ tặng vợ")
+        else:
+            send_zalo_message(user_id, "🧠 Đang suy nghĩ...")
+            send_zalo_message(user_id, ask_chatgpt(" ".join(args)))
 
     elif cmd == "/nhac":
         q = " ".join(args)
@@ -487,7 +561,7 @@ def handle_command(user_id, cmd, args):
     elif cmd == "/meme":
         try:
             r = requests.get("https://meme-api.com/gimme/animememes").json()
-            send_zalo_image(user_id, r.get("url"), "🤣 Meme nè:")
+            send_image_zalo(user_id, r.get("url"), "🤣 Meme nè:")
         except: send_zalo_message(user_id, "❌ Lỗi ảnh.")
 
     elif cmd == "/anime":
@@ -511,13 +585,10 @@ def handle_command(user_id, cmd, args):
         else:
             q = " ".join(args)
             send_zalo_message(user_id, f"🔍 Đang tìm 3 banner {q} mới nhất...")
-            # Tìm 3 ảnh để gửi
-            urls = search_multiple_images(f"{q} banner", 3)
+            urls = search_multiple_images(f"{q} current banner official event wish", 3)
             if urls:
-                for idx, u in enumerate(urls):
-                    send_zalo_image(user_id, u, f"🏷️ Banner {idx+1}")
-            else:
-                send_zalo_message(user_id, "❌ Không tìm thấy ảnh.")
+                for i, u in enumerate(urls): send_image_zalo(user_id, u, f"🏷️ Banner {i+1}")
+            else: send_zalo_message(user_id, "❌ Không tìm thấy ảnh.")
 
     elif cmd == "/sticker":
         send_zalo_message(user_id, "🖼️ Gửi ảnh vào đây để tạo sticker (Echo).")
@@ -529,6 +600,9 @@ def handle_command(user_id, cmd, args):
     🔮 **TAROT & TÂM LINH**
 ✨ 1./tarot : Bói bài Tarot
 🎭 2./baitay : Bói bài Tây
+
+    🤖 **TRÍ TUỆ NHÂN TẠO**
+🧠 17./ai [câu hỏi] : Hỏi ChatGPT
 
     🎵 **ÂM NHẠC**
 🎧 3./nhac [tên] : Tìm nhạc Youtube
@@ -559,10 +633,10 @@ def handle_command(user_id, cmd, args):
     else:
         send_zalo_message(user_id, get_funny_response(cmd))
 
-# ================= 8. MAIN HANDLER =================
+# ================= 8. MAIN HANDLER (FIX LOGIC) =================
 
 @app.route("/", methods=['GET'])
-def index(): return "Bot Zalo V23 Final Pro Max Live!", 200
+def index(): return "Bot Zalo V26 Original Data Live!", 200
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
@@ -572,12 +646,11 @@ def webhook():
             msg = data['message']
             sender_id = msg['from']['id']
             text = msg.get('text', msg.get('content', '')).strip()
-
             print(f"User {sender_id}: {text}")
 
-            # 1. ƯU TIÊN SESSION (Bói bài / Game)
+            # 1. ƯU TIÊN SESSION (QUAN TRỌNG: Đặt lên đầu để fix lỗi gõ số)
             if sender_id in tarot_sessions:
-                if text.lower() in ["hủy", "/stop"]:
+                if text.lower() in ["hủy", "stop"]:
                     del tarot_sessions[sender_id]
                     send_zalo_message(sender_id, "Đã hủy.")
                 else: handle_session_flow(sender_id, text)
@@ -593,7 +666,7 @@ def webhook():
                 else: send_zalo_message(sender_id, "Gõ: KEO, BUA hoặc BAO")
                 return "ok", 200
 
-            # 2. MENU SỐ
+            # 2. MENU SỐ (Chỉ chạy khi KHÔNG có session)
             if text in NUMBER_MAP:
                 handle_command(sender_id, NUMBER_MAP[text], [])
                 return "ok", 200
@@ -603,15 +676,15 @@ def webhook():
                 parts = text.split()
                 handle_command(sender_id, parts[0], parts[1:])
             
-            # 4. CHATBOT
+            # 4. CHATBOT (Cuối cùng)
             else:
                 if text.lower() in ["hi", "menu", "help"]: handle_command(sender_id, "/help", [])
                 else: send_zalo_message(sender_id, get_funny_response(text))
         
-        # Xử lý sự kiện gửi ảnh
+        # 5. XỬ LÝ ẢNH
         elif 'event_name' in data and data['event_name'] == 'user_send_image':
              sender_id = data['sender']['id']
-             send_zalo_message(sender_id, "🖼️ Bot đã nhận ảnh của bạn!")
+             send_zalo_message(sender_id, "🖼️ Ảnh đẹp đấy! (Tính năng Sticker Echo)")
 
     except Exception as e:
         print(f"Error: {e}")
