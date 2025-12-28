@@ -3,4 +3,6 @@ requests
 wikipedia
 duckduckgo_search
 pytz
+google_genai
 gunicorn
+
