@@ -11,11 +11,13 @@ from duckduckgo_search import DDGS
 from google import genai
 from groq import Groq
 
-# ================= 1. CẤU HÌNH BOT (BẢO MẬT 100%) =================
+# ================= 1. CẤU HÌNH BOT =================
 app = Flask(__name__)
 
-# 👇 LẤY KEY TỪ BIẾN MÔI TRƯỜNG TRÊN RENDER (KHÔNG HARDCODE)
-ACCESS_TOKEN = os.environ.get("ZALO_ACCESS_TOKEN", "")
+# 1. TOKEN ZALO
+ACCESS_TOKEN = os.environ.get("ZALO_ACCESS_TOKEN", "3829309327888967360:pbdpnfxQdCOoTHEqPdnSPIoWkwatLMuUOCcmokIwjBtygqsAMhFDyDcwFuohadlr")
+
+# 2. CÁC API KEY AI
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -27,9 +29,6 @@ except: pass
 # ================= 2. HÀM GỬI TIN & ẢNH =================
 
 def send_zalo_message(chat_id, text_content):
-    if not ACCESS_TOKEN:
-        print("⚠️ Lỗi: Chưa cấu hình ZALO_ACCESS_TOKEN trên Render")
-        return
     api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text_content}
     headers = {"Content-Type": "application/json"}
@@ -37,7 +36,6 @@ def send_zalo_message(chat_id, text_content):
     except Exception as e: print(f"Lỗi gửi tin: {e}")
 
 def send_image_zalo(chat_id, image_url, caption=""):
-    if not ACCESS_TOKEN: return
     api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -61,35 +59,56 @@ def send_image_zalo(chat_id, image_url, caption=""):
         if r.status_code != 200: send_zalo_message(chat_id, f"{caption}\nLink: {image_url}")
     except: send_zalo_message(chat_id, f"{caption}\nLink: {image_url}")
 
-# ================= 3. TRÍ TUỆ NHÂN TẠO =================
+# ================= 3. TRÍ TUỆ NHÂN TẠO (ĐA MODEL) =================
 
 def ask_chatgpt(question):
-    if not OPENAI_API_KEY: return "⚠️ Chưa thêm OPENAI_API_KEY vào Render."
+    """Hỏi OpenAI"""
+    if not OPENAI_API_KEY or len(OPENAI_API_KEY) < 10: return "⚠️ Chưa có Key OpenAI."
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}
     data = {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": question}], "max_tokens": 800}
     try: return requests.post(url, headers=headers, json=data).json()['choices'][0]['message']['content']
-    except: return "Lỗi kết nối OpenAI."
+    except: return "Lỗi OpenAI."
 
 def ask_gemini(question):
-    if not GEMINI_API_KEY: return "⚠️ Chưa thêm GEMINI_API_KEY vào Render."
+    """Hỏi Gemini"""
+    if not GEMINI_API_KEY: return "⚠️ Chưa có Key Gemini."
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(model="gemini-1.5-flash", contents=question)
-        return response.text
+        return client.models.generate_content(model="gemini-1.5-flash", contents=question).text
     except Exception as e: return f"⚠️ Lỗi Gemini: {str(e)}"
 
-def ask_groq(question):
-    if not GROQ_API_KEY: return "⚠️ Chưa thêm GROQ_API_KEY vào Render."
+# --- GROQ: CHUYÊN BIỆT HÓA ---
+
+def ask_groq_command(question):
+    """Dùng cho lệnh /groq: Model KHỦNG (Llama 3.3 70B)"""
+    if not GROQ_API_KEY: return "⚠️ Chưa có Key Groq."
     try:
         client = Groq(api_key=GROQ_API_KEY)
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", # Model mới nhất
+            model="llama-3.3-70b-versatile", # Model mạnh nhất
             messages=[{"role": "user", "content": question}],
             temperature=0.7, max_tokens=1024, top_p=1, stream=False, stop=None,
         )
         return completion.choices[0].message.content
-    except Exception as e: return f"⚠️ Lỗi Groq: {str(e)}"
+    except Exception as e: return f"⚠️ Lỗi Groq Command: {str(e)}"
+
+def ask_groq_chat_instant(question):
+    """Dùng cho Chat tự do: Model NHANH (Llama 3.1 8B)"""
+    if not GROQ_API_KEY: return None # Trả về None để kích hoạt Fallback
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        completion = client.chat.completions.create(
+            model="llama-3.1-8b-instant", # Model siêu tốc
+            messages=[
+                # System Prompt: Định hình tính cách cho bot
+                {"role": "system", "content": "Bạn là trợ lý Zalo vui tính, ngắn gọn, hay đùa. Hãy trả lời tiếng Việt."},
+                {"role": "user", "content": question}
+            ],
+            temperature=0.8, max_tokens=300, top_p=1, stream=False, stop=None,
+        )
+        return completion.choices[0].message.content
+    except: return None # Lỗi thì trả về None
 
 # ================= 4. CÔNG CỤ TÌM KIẾM =================
 
@@ -107,7 +126,14 @@ def search_multiple_images(query, count=3):
             return [x['image'] for x in res]
     except: return []
 
-# ================= 5. DỮ LIỆU HỆ THỐNG & FULL DATA =================
+def search_image_url(query):
+    try:
+        with DDGS() as ddgs:
+            res = list(ddgs.images(query, max_results=1))
+            return res[0]['image'] if res else None
+    except: return None
+
+# ================= 5. DỮ LIỆU HỆ THỐNG =================
 
 NUMBER_MAP = {
     "1": "/tarot", "2": "/baitay", "3": "/nhac", "4": "/time", "5": "/thptqg",
@@ -128,7 +154,7 @@ GAME_CODES = {
     "bloxfruit": ["SUB2GAMERROBOT", "KITGAMING"]
 }
 
-# --- TAROT DATA FULL ---
+# --- TAROT DATA ---
 MAJORS_DATA = {
     0: ("The Fool", "sự khởi đầu đầy ngây thơ, tự do và tiềm năng vô hạn", "sự liều lĩnh ngu ngốc, ngây thơ quá mức hoặc rủi ro không đáng có", "hãy dũng cảm bước đi nhưng đừng quên nhìn đường"),
     1: ("The Magician", "năng lực hiện thực hóa, sự tập trung và kỹ năng điêu luyện", "sự thao túng, lừa dối hoặc tài năng bị sử dụng sai mục đích", "bạn có đủ mọi nguồn lực, hãy tin vào khả năng của mình"),
@@ -221,7 +247,7 @@ MINORS_FULL = {
     })
 }
 
-# --- BÀI TÂY DATA FULL ---
+# --- BÀI TÂY DATA ---
 PLAYING_CARDS_FULL = {
     "Hearts": { # CƠ - CẢM XÚC
         "A": {"core": "một khởi đầu mới đầy ắp tình cảm", "shadow": "thực ra có thể bạn đang quá khao khát yêu thương nên dễ ngộ nhận", "advice": "hãy mở lòng nhưng đừng vội vàng trao hết"},
@@ -297,62 +323,43 @@ SPREADS_PLAYING = {
     "7": {"name": "7 Lá (Tình duyên)", "count": 7, "pos": ["Năng lượng của bạn", "Năng lượng đối phương", "Cảm xúc của bạn", "Cảm xúc của họ", "Trở ngại khách quan", "Trở ngại chủ quan", "Kết quả mối quan hệ"]}
 }
 
-# ================= 6. ENGINE LOGIC (XỬ LÝ THÔNG MINH) =================
+# ================= 6. LOGIC CHAT (ƯU TIÊN GROQ) =================
 
 def get_natural_connector(index, total):
     if index == 0: return "Đầu tiên thì,"
     elif index == total - 1: return "Cuối cùng,"
     else: return random.choice(["Tiếp đến,", "Bên cạnh đó,", "Không chỉ vậy,", "Chưa hết đâu,", "Nhìn sang lá tiếp theo,"])
 
+# Danh sách fallback nếu Groq lỗi (Offline)
+FALLBACK_REPLIES = [
+    "Bot đang chạy bằng cơm, đừng hỏi khó quá 🍚",
+    "Gõ /help xem menu đi, chém gió hoài.",
+    "Đang bận đi giải cứu thế giới rồi 🦸‍♂️",
+    "Alo nghe rõ, dây thép gai đây! 📞",
+    "Không hiểu gì hết, nhưng mà nghe cuốn đấy!",
+    "Câu này bot chịu, đi hỏi Google đi má /gg"
+]
+
 def get_funny_response(text):
+    # 1. Thử dùng Groq Instant trả lời trước
+    groq_reply = ask_groq_chat_instant(text)
+    
+    if groq_reply:
+        return groq_reply
+    
+    # 2. Nếu Groq lỗi, dùng Logic Offline (V15 cũ)
     text = text.lower()
-    
-    # 1. Nhóm chào hỏi
-    if any(x in text for x in ["hi", "chào", "hello", "alo", "ê", "bot ơi"]):
-        return random.choice([
-            "Chào cưng, nay rảnh ghé chơi à? 😎",
-            "Alo nghe rõ, dây thép gai đây! 📞",
-            "Gọi bot chi đấy? Đang bận đi giải cứu thế giới rồi.",
-            "Hello, chúc một ngày không bị deadline dí! 🏃"
-        ])
-
-    # 2. Nhóm tình cảm
-    if "yêu" in text or "crush" in text or "thích" in text:
-        return random.choice([
-            "Yêu đương gì tầm này, lo học đi má! 📚",
-            "Crush nó không thích bạn đâu, tỉnh mộng đi. 🙄",
-            "Tình yêu như bát bún riêu, bao nhiêu sợi bún bấy nhiêu sợi sầu...",
-            "Vào /baitay xem quẻ tình duyên đi, ngồi đó mà than thở hoài."
-        ])
-
-    # 3. Nhóm than vãn
-    if "buồn" in text or "khóc" in text or "chán" in text or "sầu" in text:
-        return random.choice([
-            "Buồn thì đi ngủ, trong mơ cái gì cũng có. 😴",
-            "Thôi nín đi, khóc sưng mắt xấu lắm ai mà thèm yêu.",
-            "Cuộc đời này ngắn lắm, đừng lãng phí thời gian để buồn. Đi ăn gì ngon đi! 🍜",
-            "Chán thì vào /kbb làm ván với tao này! 🥊"
-        ])
-
-    # 4. Nhóm công kích/trêu chọc
-    if "ngu" in text or "dốt" in text or "điên" in text or "cút" in text:
-        return random.choice([
-            "Gương kia ngự ở trên tường... 🪞",
-            "Chửi bot là nghiệp tụ vành môi đó nha. 🤐",
-            "Bot thông minh hơn bạn nghĩ đấy, cẩn thận!",
-            "Ok fine, bạn nhất, bạn là số 1. 👍"
-        ])
-    
-    # 5. Nhóm khen ngợi
-    if "giỏi" in text or "thông minh" in text or "hay" in text or "xinh" in text:
-        return random.choice([
-            "Chuyện, bot của Tronglv mà lị! 😎",
-            "Khen thừa, cái đó ai cũng biết.",
-            "Ngại quá, nhưng mà thích! 🥰"
-        ])
-
-    # 6. Fallback AI
-    return ask_groq(text)
+    if "yêu" in text or "crush" in text:
+        return "Yêu đương gì tầm này, lo học đi má! 📚"
+    if "buồn" in text or "khóc" in text:
+        return "Thôi nín đi, khóc sưng mắt xấu lắm."
+    if "ngu" in text or "dốt" in text:
+        return "Gương kia ngự ở trên tường... 🪞"
+    if "cảm ơn" in text: 
+        return "Khách sáo quá, chuyển khoản là được rồi. 💸"
+        
+    # 3. Fallback cuối cùng
+    return random.choice(FALLBACK_REPLIES)
 
 def generate_tarot_deck():
     deck = []
@@ -386,10 +393,12 @@ def execute_tarot_reading(ctx):
         status_icon = "🔺" if c['orientation'] == "Xuôi" else "🔻"
         
         msg += f"{status_icon} **{c['pos']}: {c['name']}** ({c['orientation']})\n"
+        
         if c['orientation'] == "Xuôi":
             msg += f"{prefix} lá bài này mang đến năng lượng tích cực về {c['meaning_up']}. Đây là tín hiệu để bạn tự tin bước tiếp.\n"
         else:
             msg += f"{prefix} ở chiều ngược, lá bài cảnh báo về {c['meaning_rev']}. Có lẽ bạn cần chậm lại để xem xét kỹ hơn.\n"
+            
         msg += f"👉 *Lời khuyên nhỏ:* {c['advice']}\n\n"
             
     msg += "💡 **THÔNG ĐIỆP TỪ VŨ TRỤ:**\n"
@@ -400,6 +409,7 @@ def generate_playing_deck():
     deck = []
     suits_vn = {"Hearts": "Cơ", "Diamonds": "Rô", "Clubs": "Tép", "Spades": "Bích"}
     ranks_vn = {"A":"Át", "2":"Hai", "3":"Ba", "4":"Bốn", "5":"Năm", "6":"Sáu", "7":"Bảy", "8":"Tám", "9":"Chín", "10":"Mười", "J":"Bồi", "Q":"Đầm", "K":"Già"}
+    
     for suit_en, ranks in PLAYING_CARDS_FULL.items():
         for rank, details in ranks.items():
             name = f"{ranks_vn[rank]} {suits_vn[suit_en]}"
@@ -435,7 +445,8 @@ def execute_playing_reading(ctx):
     for i, c in enumerate(drawn):
         connector = get_natural_connector(i, len(drawn))
         interpretation = ""
-        # Logic Context-Aware (Chuẩn V15)
+        
+        # Logic Context-Aware (V15)
         if "tình" in topic:
             if c["suit"] == "Diamonds": interpretation = f"Dù hỏi về tình cảm, nhưng lá Rô này ám chỉ **vấn đề tài chính** đang tác động. {c['core']}."
             elif c["suit"] == "Clubs": interpretation = f"Công việc bận rộn đang làm xao nhãng mối quan hệ. {c['core']}."
@@ -453,7 +464,7 @@ def execute_playing_reading(ctx):
         msg += f"👉 *Góc nhìn sâu hơn:* {c['shadow']}. "
         msg += f"Tại vị trí '{c['pos_name']}', lời khuyên là: {c['advice']}.\n\n"
 
-    # Kết bài
+    # Tổng kết
     suits_count = {"Hearts": 0, "Diamonds": 0, "Clubs": 0, "Spades": 0}
     for c in drawn: suits_count[c["suit"]] += 1
     dom_suit = max(suits_count, key=suits_count.get)
@@ -466,7 +477,7 @@ def execute_playing_reading(ctx):
 
     return msg
 
-# ================= 6. FLOW HỘI THOẠI =================
+# ================= 7. FLOW HỘI THOẠI =================
 
 def handle_session_flow(user_id, text):
     s = tarot_sessions.get(user_id)
@@ -508,7 +519,7 @@ def handle_session_flow(user_id, text):
             del tarot_sessions[user_id]
         else: send_zalo_message(user_id, "❌ Vui lòng chỉ gõ số (1, 2, 3).")
 
-# ================= 7. XỬ LÝ LỆNH =================
+# ================= 8. XỬ LÝ LỆNH =================
 
 def handle_command(user_id, cmd, args):
     cmd = cmd.lower()
@@ -522,22 +533,22 @@ def handle_command(user_id, cmd, args):
         send_zalo_message(user_id, "🎭 **PHÒNG BÓI BÀI TÂY**\nChủ đề bạn quan tâm?\nGõ:\n1. Tình yêu\n2. Công việc\n3. Tiền bạc")
 
     elif cmd == "/ai":
-        if not args: send_zalo_message(user_id, "🤖 Cú pháp: /ai [câu hỏi]\nVD: /ai Viết thơ tặng vợ")
+        if not args: send_zalo_message(user_id, "🤖 Cú pháp: /ai [câu hỏi]")
         else:
-            send_zalo_message(user_id, "🧠 Đang suy nghĩ...")
+            send_zalo_message(user_id, "🧠 ChatGPT đang suy nghĩ...")
             send_zalo_message(user_id, ask_chatgpt(" ".join(args)))
 
     elif cmd == "/ge":
-        if not args: send_zalo_message(user_id, "💎 Cú pháp: /ge [câu hỏi]\nVD: /ge Tóm tắt sách")
+        if not args: send_zalo_message(user_id, "💎 Cú pháp: /ge [câu hỏi]")
         else:
             send_zalo_message(user_id, "💎 Gemini đang suy nghĩ...")
             send_zalo_message(user_id, ask_gemini(" ".join(args)))
 
     elif cmd == "/groq":
-        if not args: send_zalo_message(user_id, "⚡ Cú pháp: /groq [câu hỏi]\nVD: /groq Dịch sang tiếng Anh")
+        if not args: send_zalo_message(user_id, "⚡ Cú pháp: /groq [câu hỏi]")
         else:
-            send_zalo_message(user_id, "⚡ Groq đang xử lý...")
-            send_zalo_message(user_id, ask_groq(" ".join(args)))
+            send_zalo_message(user_id, "⚡ Groq (Llama 3.3) đang xử lý...")
+            send_zalo_message(user_id, ask_groq_command(" ".join(args)))
 
     elif cmd == "/nhac":
         q = " ".join(args)
@@ -644,12 +655,13 @@ def handle_command(user_id, cmd, args):
 🖌️ 16./sticker : Gửi ảnh để tạo sticker"""
         send_zalo_message(user_id, menu)
     else:
+        # Nếu không phải lệnh -> Chatbot (Ưu tiên Groq -> Fallback)
         send_zalo_message(user_id, get_funny_response(cmd))
 
-# ================= 8. MAIN HANDLER =================
+# ================= 9. MAIN HANDLER =================
 
 @app.route("/", methods=['GET'])
-def index(): return "Bot Zalo V33 Security & Full Data Live!", 200
+def index(): return "Bot Zalo V33 Smart Hybrid Live!", 200
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
@@ -661,6 +673,7 @@ def webhook():
             text = msg.get('text', msg.get('content', '')).strip()
             print(f"User {sender_id}: {text}")
 
+            # 1. ƯU TIÊN THOÁT SESSION
             if sender_id in tarot_sessions:
                 if text.lower() in ["hủy", "stop", "thoát", "/help"]:
                     del tarot_sessions[sender_id]
@@ -669,6 +682,7 @@ def webhook():
                 else: handle_session_flow(sender_id, text)
                 return "ok", 200
 
+            # 2. XỬ LÝ GAME
             if sender_id in kbb_state:
                 b = random.choice(["KEO", "BUA", "BAO"])
                 u = text.upper()
@@ -679,16 +693,22 @@ def webhook():
                 else: send_zalo_message(sender_id, "Gõ: KEO, BUA hoặc BAO")
                 return "ok", 200
 
+            # 3. XỬ LÝ LỆNH MENU SỐ
             if text in NUMBER_MAP:
                 handle_command(sender_id, NUMBER_MAP[text], [])
                 return "ok", 200
 
+            # 4. XỬ LÝ LỆNH /
             if text.startswith("/"):
                 parts = text.split()
                 handle_command(sender_id, parts[0], parts[1:])
+            
+            # 5. CHATBOT TỰ DO (Auto Groq -> Fallback)
             else:
-                if text.lower() in ["hi", "menu", "help"]: handle_command(sender_id, "/help", [])
-                else: send_zalo_message(sender_id, get_funny_response(text))
+                if text.lower() in ["hi", "menu", "help", "xin chào"]: 
+                    handle_command(sender_id, "/help", [])
+                else: 
+                    send_zalo_message(sender_id, get_funny_response(text))
         
         elif 'event_name' in data and data['event_name'] == 'user_send_image':
              sender_id = data['sender']['id']
