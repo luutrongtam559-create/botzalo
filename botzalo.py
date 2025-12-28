@@ -8,33 +8,35 @@ import requests
 import wikipedia
 from flask import Flask, request
 from duckduckgo_search import DDGS
-from google import genai 
+# Thư viện này cần cài google-genai trong requirements.txt
+try:
+    from google import genai
+except ImportError:
+    genai = None 
 
-# ================= 1. CẤU HÌNH BOT (BẢO MẬT TUYỆT ĐỐI) =================
+# ================= 1. CẤU HÌNH BOT =================
 app = Flask(__name__)
 
-# 👇 LẤY KEY TỪ SERVER (KHÔNG ĐỂ LỘ TRONG CODE)
+# LẤY KEY TỪ RENDER (BẢO MẬT)
 ACCESS_TOKEN = os.environ.get("ZALO_ACCESS_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Cấu hình Wiki
 try: wikipedia.set_lang("vi")
 except: pass
 
 # ================= 2. HÀM GỬI TIN & ẢNH =================
 
 def send_zalo_message(chat_id, text_content):
-    if not ACCESS_TOKEN:
-        print("❌ Lỗi: Chưa cấu hình ZALO_ACCESS_TOKEN trên Render!")
-        return
+    if not ACCESS_TOKEN: return
     api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text_content}
     headers = {"Content-Type": "application/json"}
     try: requests.post(api_url, headers=headers, json=payload)
-    except Exception as e: print(f"Lỗi gửi tin: {e}")
+    except: pass
 
 def send_image_zalo(chat_id, image_url, caption=""):
+    """Gửi ảnh template để hiện hình trên Zalo"""
     if not ACCESS_TOKEN: return
     api_url = f"https://bot-api.zaloplatforms.com/bot{ACCESS_TOKEN}/sendMessage"
     payload = {
@@ -56,13 +58,14 @@ def send_image_zalo(chat_id, image_url, caption=""):
     headers = {"Content-Type": "application/json"}
     try:
         r = requests.post(api_url, headers=headers, json=payload)
+        # Nếu lỗi (do link ảnh bị chặn), gửi link text
         if r.status_code != 200: send_zalo_message(chat_id, f"{caption}\nLink: {image_url}")
     except: send_zalo_message(chat_id, f"{caption}\nLink: {image_url}")
 
-# ================= 3. TRÍ TUỆ NHÂN TẠO (GPT & GEMINI) =================
+# ================= 3. TRÍ TUỆ NHÂN TẠO =================
 
 def ask_chatgpt(question):
-    if not OPENAI_API_KEY: return "⚠️ Lỗi: Chưa nhập OPENAI_API_KEY trên Render."
+    if not OPENAI_API_KEY: return "⚠️ Chưa nhập Key OpenAI."
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}
     data = {
@@ -73,15 +76,16 @@ def ask_chatgpt(question):
     try:
         r = requests.post(url, headers=headers, json=data)
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
-        return "⚠️ Hết tiền OpenAI hoặc lỗi Key."
+        return "⚠️ OpenAI hết tiền hoặc lỗi Key."
     except: return "Lỗi kết nối OpenAI."
 
 def ask_gemini(question):
-    if not GEMINI_API_KEY: return "⚠️ Lỗi: Chưa nhập GEMINI_API_KEY trên Render."
+    if not GEMINI_API_KEY: return "⚠️ Chưa nhập Key Gemini."
+    if not genai: return "⚠️ Lỗi: Chưa cài thư viện google-genai trên Render."
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.0-flash", # Hoặc gemini-1.5-flash
+            model="gemini-2.0-flash", 
             contents=question
         )
         return response.text
@@ -100,18 +104,12 @@ def search_text_summary(query):
 def search_multiple_images(query, count=3):
     try:
         with DDGS() as ddgs:
+            # Tìm kiếm hình ảnh đơn giản hơn để dễ ra kết quả
             res = list(ddgs.images(query, max_results=count))
             return [x['image'] for x in res]
     except: return []
 
-def search_image_url(query):
-    try:
-        with DDGS() as ddgs:
-            res = list(ddgs.images(query, max_results=1))
-            return res[0]['image'] if res else None
-    except: return None
-
-# ================= 5. DỮ LIỆU HỆ THỐNG & GAME =================
+# ================= 5. DỮ LIỆU GAME & DATA =================
 
 NUMBER_MAP = {
     "1": "/tarot", "2": "/baitay", "3": "/nhac", "4": "/time", "5": "/thptqg",
@@ -132,7 +130,7 @@ GAME_CODES = {
     "bloxfruit": ["SUB2GAMERROBOT", "KITGAMING"]
 }
 
-# --- TAROT DATA FULL KHÔNG CHE ---
+# --- TAROT DATA FULL ---
 MAJORS_DATA = {
     0: ("The Fool", "sự khởi đầu đầy ngây thơ, tự do và tiềm năng vô hạn", "sự liều lĩnh ngu ngốc, ngây thơ quá mức hoặc rủi ro không đáng có", "hãy dũng cảm bước đi nhưng đừng quên nhìn đường"),
     1: ("The Magician", "năng lực hiện thực hóa, sự tập trung và kỹ năng điêu luyện", "sự thao túng, lừa dối hoặc tài năng bị sử dụng sai mục đích", "bạn có đủ mọi nguồn lực, hãy tin vào khả năng của mình"),
@@ -301,7 +299,7 @@ SPREADS_PLAYING = {
     "7": {"name": "7 Lá (Tình duyên)", "count": 7, "pos": ["Năng lượng của bạn", "Năng lượng đối phương", "Cảm xúc của bạn", "Cảm xúc của họ", "Trở ngại khách quan", "Trở ngại chủ quan", "Kết quả mối quan hệ"]}
 }
 
-# ================= 5. ENGINE LOGIC (XỬ LÝ THÔNG MINH) =================
+# ================= 6. ENGINE LOGIC (XỬ LÝ THÔNG MINH) =================
 
 def get_natural_connector(index, total):
     if index == 0: return "Đầu tiên thì,"
@@ -310,17 +308,52 @@ def get_natural_connector(index, total):
 
 def get_funny_response(text):
     text = text.lower()
-    if any(x in text for x in ["hi", "chào", "hello", "alo", "ê"]):
-        return random.choice(["Chào cưng, nay rảnh ghé chơi à? 😎", "Alo nghe rõ, dây thép gai đây! 📞", "Gõ /help xem menu đi."])
-    if "yêu" in text or "crush" in text:
-        return random.choice(["Yêu đương gì tầm này, lo học đi má! 📚", "Crush nó không thích bạn đâu, tỉnh mộng đi. 🙄", "Vào /baitay xem quẻ tình duyên đi."])
-    if "buồn" in text or "khóc" in text:
-        return random.choice(["Buồn thì đi ngủ, trong mơ cái gì cũng có. 😴", "Thôi nín đi, khóc sưng mắt xấu lắm.", "Chán thì vào /kbb làm ván với tao này! 🥊"])
-    if "ngu" in text or "dốt" in text:
-        return random.choice(["Gương kia ngự ở trên tường... 🪞", "Chửi bot là nghiệp tụ vành môi đó nha. 🤐"])
-    if "cảm ơn" in text: return "Khách sáo quá, chuyển khoản là được rồi. 💸"
     
-    # Nếu không match câu nào -> Dùng AI trả lời (Ưu tiên Gemini vì miễn phí)
+    # 1. Nhóm chào hỏi
+    if any(x in text for x in ["hi", "chào", "hello", "alo", "ê", "bot ơi"]):
+        return random.choice([
+            "Chào cưng, nay rảnh ghé chơi à? 😎",
+            "Alo nghe rõ, dây thép gai đây! 📞",
+            "Gọi bot chi đấy? Đang bận đi giải cứu thế giới rồi.",
+            "Hello, chúc một ngày không bị deadline dí! 🏃"
+        ])
+
+    # 2. Nhóm tình cảm
+    if "yêu" in text or "crush" in text or "thích" in text:
+        return random.choice([
+            "Yêu đương gì tầm này, lo học đi má! 📚",
+            "Crush nó không thích bạn đâu, tỉnh mộng đi. 🙄",
+            "Tình yêu như bát bún riêu, bao nhiêu sợi bún bấy nhiêu sợi sầu...",
+            "Vào /baitay xem quẻ tình duyên đi, ngồi đó mà than thở hoài."
+        ])
+
+    # 3. Nhóm than vãn
+    if "buồn" in text or "khóc" in text or "chán" in text or "sầu" in text:
+        return random.choice([
+            "Buồn thì đi ngủ, trong mơ cái gì cũng có. 😴",
+            "Thôi nín đi, khóc sưng mắt xấu lắm ai mà thèm yêu.",
+            "Cuộc đời này ngắn lắm, đừng lãng phí thời gian để buồn. Đi ăn gì ngon đi! 🍜",
+            "Chán thì vào /kbb làm ván với tao này! 🥊"
+        ])
+
+    # 4. Nhóm công kích/trêu chọc
+    if "ngu" in text or "dốt" in text or "điên" in text or "cút" in text:
+        return random.choice([
+            "Gương kia ngự ở trên tường... 🪞",
+            "Chửi bot là nghiệp tụ vành môi đó nha. 🤐",
+            "Bot thông minh hơn bạn nghĩ đấy, cẩn thận!",
+            "Ok fine, bạn nhất, bạn là số 1. 👍"
+        ])
+    
+    # 5. Nhóm khen ngợi
+    if "giỏi" in text or "thông minh" in text or "hay" in text or "xinh" in text:
+        return random.choice([
+            "Chuyện, bot của Tronglv mà lị! 😎",
+            "Khen thừa, cái đó ai cũng biết.",
+            "Ngại quá, nhưng mà thích! 🥰"
+        ])
+
+    # 6. Fallback AI (Tự động chuyển sang mode Chatbot hài hước nếu AI lỗi)
     return ask_gemini(text)
 
 def generate_tarot_deck():
@@ -595,13 +628,13 @@ def handle_command(user_id, cmd, args):
 🖌️ 16./sticker : Gửi ảnh để tạo sticker"""
         send_zalo_message(user_id, menu)
     else:
-        # Chatbot tự do
+        # Chatbot tự do + AI Fallback
         send_zalo_message(user_id, get_funny_response(cmd))
 
 # ================= 8. MAIN HANDLER =================
 
 @app.route("/", methods=['GET'])
-def index(): return "Bot Zalo V31 Secure Live!", 200
+def index(): return "Bot Zalo V32 Final Escape Logic Live!", 200
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
@@ -613,12 +646,21 @@ def webhook():
             text = msg.get('text', msg.get('content', '')).strip()
             print(f"User {sender_id}: {text}")
 
+            # 1. CƠ CHẾ THOÁT KHẨN CẤP
+            if text.lower() in ["/help", "menu", "hủy", "stop", "thoát", "hi", "xin chào"]:
+                if sender_id in tarot_sessions: del tarot_sessions[sender_id]
+                if sender_id in kbb_state: del kbb_state[sender_id]
+                
+                if text.lower() in ["/help", "menu", "hi", "xin chào"]:
+                    handle_command(sender_id, "/help", [])
+                    return "ok", 200
+                else:
+                    send_zalo_message(sender_id, "✅ Đã hủy lệnh hiện tại.")
+                    return "ok", 200
+
+            # 2. XỬ LÝ SESSION
             if sender_id in tarot_sessions:
-                if text.lower() in ["hủy", "stop", "thoát", "/help"]:
-                    del tarot_sessions[sender_id]
-                    if text == "/help": handle_command(sender_id, "/help", [])
-                    else: send_zalo_message(sender_id, "✅ Đã hủy lệnh bói bài.")
-                else: handle_session_flow(sender_id, text)
+                handle_session_flow(sender_id, text)
                 return "ok", 200
 
             if sender_id in kbb_state:
@@ -631,6 +673,7 @@ def webhook():
                 else: send_zalo_message(sender_id, "Gõ: KEO, BUA hoặc BAO")
                 return "ok", 200
 
+            # 3. XỬ LÝ LỆNH THƯỜNG
             if text in NUMBER_MAP:
                 handle_command(sender_id, NUMBER_MAP[text], [])
                 return "ok", 200
@@ -638,13 +681,14 @@ def webhook():
             if text.startswith("/"):
                 parts = text.split()
                 handle_command(sender_id, parts[0], parts[1:])
+            
+            # 4. CHATBOT TỰ DO
             else:
-                if text.lower() in ["hi", "menu", "help"]: handle_command(sender_id, "/help", [])
-                else: send_zalo_message(sender_id, get_funny_response(text))
+                send_zalo_message(sender_id, get_funny_response(text))
         
         elif 'event_name' in data and data['event_name'] == 'user_send_image':
              sender_id = data['sender']['id']
-             send_zalo_message(sender_id, "🖼️ Ảnh đẹp đấy! (Tính năng Sticker Echo)")
+             send_zalo_message(sender_id, "🖼️ Bot đã nhận ảnh (Echo Sticker).")
 
     except Exception as e: print(f"Error: {e}")
     return "ok", 200
