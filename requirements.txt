@@ -1,9 +1,6 @@
-
 Flask
 requests
 wikipedia
 duckduckgo_search
 pytz
 gunicorn
-
-
